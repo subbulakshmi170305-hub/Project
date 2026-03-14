@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ESP32 Motor Controller</title>
+    <title>ESP32 Motor Controller - Firebase</title>
     
     <!-- Firebase SDK -->
     <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
@@ -33,18 +33,6 @@
             box-shadow: 0 20px 60px rgba(0,0,0,0.3);
             max-width: 500px;
             width: 100%;
-            animation: slideIn 0.5s ease-out;
-        }
-        
-        @keyframes slideIn {
-            from {
-                transform: translateY(-50px);
-                opacity: 0;
-            }
-            to {
-                transform: translateY(0);
-                opacity: 1;
-            }
         }
         
         h1 {
@@ -245,34 +233,15 @@
             font-size: 12px;
         }
         
-        .max-rpm-input {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            margin-top: 15px;
-        }
-        
-        .max-rpm-input input {
-            flex: 1;
+        .data-path {
+            background: #f0f0f0;
             padding: 10px;
-            border: 2px solid #e0e0e0;
             border-radius: 8px;
-            font-size: 16px;
-        }
-        
-        .max-rpm-input button {
-            padding: 10px 20px;
-            background: #667eea;
-            color: white;
-            border: none;
-            border-radius: 8px;
-            cursor: pointer;
-            font-weight: bold;
-            transition: background 0.3s;
-        }
-        
-        .max-rpm-input button:hover {
-            background: #764ba2;
+            font-size: 12px;
+            color: #666;
+            margin-top: 15px;
+            text-align: center;
+            font-family: monospace;
         }
     </style>
 </head>
@@ -284,9 +253,15 @@
         <div class="status-bar">
             <div class="connection-status">
                 <div class="led" id="connectionLed"></div>
-                <span id="connectionText">Connecting...</span>
+                <span id="connectionText">Connecting to Firebase...</span>
             </div>
             <div class="timestamp" id="timestamp">--:--:--</div>
+        </div>
+        
+        <!-- Firebase Info -->
+        <div class="data-path">
+            🔥 Connected to: synchronous-motor-192e9<br>
+            Path: /Motor/
         </div>
         
         <!-- Motor Control Card -->
@@ -299,7 +274,7 @@
             <!-- PWM Slider -->
             <div class="slider-container">
                 <div class="slider-label">
-                    <span>Speed Control</span>
+                    <span>Speed Control (0-225)</span>
                     <span id="pwmValue">0</span>
                 </div>
                 <input type="range" min="0" max="225" value="0" class="slider" id="pwmSlider">
@@ -329,22 +304,24 @@
         </div>
         
         <!-- MAX RPM Setting -->
-        <div class="max-rpm-input">
-            <input type="number" id="maxRpmInput" placeholder="Max RPM" value="1500">
-            <button onclick="updateMaxRPM()">Set Max RPM</button>
+        <div class="max-rpm-input" style="display: flex; gap: 10px; margin-top: 15px;">
+            <input type="number" id="maxRpmInput" placeholder="Max RPM" value="1500" style="flex: 1; padding: 10px; border: 2px solid #e0e0e0; border-radius: 8px;">
+            <button onclick="updateMaxRPM()" style="padding: 10px 20px; background: #667eea; color: white; border: none; border-radius: 8px; cursor: pointer;">Set</button>
         </div>
         
         <div class="footer">
-            ESP32 Motor Controller • Real-time Updates
+            ESP32 Motor Controller • Connected to Firebase Realtime Database
         </div>
     </div>
 
     <script>
-        // Firebase Configuration
+        // ============================================
+        // FIREBASE CONFIGURATION - YOUR DATABASE
+        // ============================================
         const firebaseConfig = {
             apiKey: "AIzaSyAKLwh4bktxDl9me9i2Wp9L8gm-SoaZs7s",
-            databaseURL: "https://synchronous-motor-192e9-default-rtdb.asia-southeast1.firebasedatabase.app/",
             authDomain: "synchronous-motor-192e9.firebaseapp.com",
+            databaseURL: "https://synchronous-motor-192e9-default-rtdb.asia-southeast1.firebasedatabase.app/",
             projectId: "synchronous-motor-192e9",
             storageBucket: "synchronous-motor-192e9.appspot.com",
             messagingSenderId: "1073191282991",
@@ -352,8 +329,10 @@
         };
 
         // Initialize Firebase
-        firebase.initializeApp(firebaseConfig);
+        console.log("Initializing Firebase...");
+        const app = firebase.initializeApp(firebaseConfig);
         const database = firebase.database();
+        console.log("Firebase initialized successfully");
         
         // DOM Elements
         const connectionLed = document.getElementById('connectionLed');
@@ -375,63 +354,93 @@
         let currentDirection = 'STOP';
         let isUpdating = false;
         
-        // Check Firebase connection
+        // ============================================
+        // CONNECTION STATUS MONITOR
+        // ============================================
         const connectedRef = database.ref('.info/connected');
         connectedRef.on('value', (snap) => {
             if (snap.val() === true) {
+                console.log("✅ Connected to Firebase");
                 connectionLed.classList.add('connected');
-                connectionText.textContent = 'Connected';
+                connectionText.textContent = 'Connected to Firebase';
+                connectionText.style.color = '#00C851';
+                
+                // Test write to verify permissions
+                database.ref('/Motor/ConnectionTest').set({
+                    timestamp: Date.now(),
+                    status: 'connected'
+                }).then(() => {
+                    console.log("✅ Write test successful");
+                }).catch((error) => {
+                    console.error("❌ Write test failed:", error);
+                });
+                
             } else {
+                console.log("❌ Disconnected from Firebase");
                 connectionLed.classList.remove('connected');
-                connectionText.textContent = 'Disconnected';
+                connectionText.textContent = 'Disconnected from Firebase';
+                connectionText.style.color = '#ff4444';
             }
         });
+        
+        // ============================================
+        // READ DATA FROM ESP32
+        // ============================================
         
         // Listen for PWM changes from ESP32
         const pwmRef = database.ref('/Motor/PWM');
         pwmRef.on('value', (snapshot) => {
             const value = snapshot.val();
+            console.log('📥 Received PWM from ESP32:', value);
             if (value !== null && !isUpdating) {
                 pwmSlider.value = value;
                 pwmValue.textContent = value;
                 pwmStat.textContent = value;
                 
-                // Calculate RPM based on PWM
-                const rpm = Math.round((value / 225) * maxRPM);
-                rpmDisplay.textContent = rpm;
-                
                 // Update PWM bar
                 const percentage = (value / 225) * 100;
                 pwmBarFill.style.width = percentage + '%';
             }
+        }, (error) => {
+            console.error('Error reading PWM:', error);
         });
         
         // Listen for direction changes from ESP32
         const dirRef = database.ref('/Motor/Direction_Control');
         dirRef.on('value', (snapshot) => {
             const value = snapshot.val();
+            console.log('📥 Received Direction from ESP32:', value);
             if (value !== null) {
                 currentDirection = value;
                 dirStat.textContent = value;
                 updateActiveButton(value);
             }
+        }, (error) => {
+            console.error('Error reading Direction:', error);
         });
         
         // Listen for RPM changes from ESP32
         const rpmRef = database.ref('/Motor/RPM');
         rpmRef.on('value', (snapshot) => {
             const value = snapshot.val();
+            console.log('📥 Received RPM from ESP32:', value);
             if (value !== null) {
                 rpmDisplay.textContent = Math.round(value);
             }
+        }, (error) => {
+            console.error('Error reading RPM:', error);
         });
         
-        // Slider input event
+        // ============================================
+        // SEND DATA TO ESP32
+        // ============================================
+        
+        // Slider input event (local update only)
         pwmSlider.addEventListener('input', function(e) {
             const value = parseInt(e.target.value);
             pwmValue.textContent = value;
             
-            // Update local display
+            // Update local RPM preview
             const rpm = Math.round((value / 225) * maxRPM);
             rpmDisplay.textContent = rpm;
             
@@ -440,19 +449,23 @@
             pwmBarFill.style.width = percentage + '%';
         });
         
-        // Slider change event (when user releases slider)
+        // Slider change event (send to Firebase)
         pwmSlider.addEventListener('change', function(e) {
             const value = parseInt(e.target.value);
             isUpdating = true;
             
-            // Send to Firebase
+            console.log('📤 Sending PWM to Firebase:', value);
+            
+            // Send to Firebase - this is what ESP32 reads
             database.ref('/Motor/PWM_Control').set(value)
                 .then(() => {
+                    console.log('✅ PWM sent successfully');
                     pwmStat.textContent = value;
                     isUpdating = false;
                 })
                 .catch((error) => {
-                    console.error('Error updating PWM:', error);
+                    console.error('❌ Error sending PWM:', error);
+                    alert('Failed to send PWM: ' + error.message);
                     isUpdating = false;
                 });
         });
@@ -461,15 +474,19 @@
         function setDirection(dir) {
             isUpdating = true;
             
+            console.log('📤 Sending Direction to Firebase:', dir);
+            
             database.ref('/Motor/Direction_Control').set(dir)
                 .then(() => {
+                    console.log('✅ Direction sent successfully');
                     currentDirection = dir;
                     dirStat.textContent = dir;
                     updateActiveButton(dir);
                     isUpdating = false;
                 })
                 .catch((error) => {
-                    console.error('Error updating direction:', error);
+                    console.error('❌ Error sending direction:', error);
+                    alert('Failed to send direction: ' + error.message);
                     isUpdating = false;
                 });
         }
@@ -498,6 +515,7 @@
             const newMax = parseInt(maxRpmInput.value);
             if (newMax > 0 && newMax <= 10000) {
                 maxRPM = newMax;
+                console.log('Max RPM set to:', maxRPM);
                 
                 // Update RPM display based on current PWM
                 const currentPWM = parseInt(pwmSlider.value);
@@ -516,6 +534,7 @@
         
         // Emergency stop function
         function emergencyStop() {
+            console.log('🛑 Emergency Stop triggered');
             pwmSlider.value = 0;
             pwmValue.textContent = '0';
             pwmStat.textContent = '0';
@@ -528,25 +547,46 @@
         
         // Add keyboard shortcuts
         document.addEventListener('keydown', function(e) {
-            switch(e.key.toLowerCase()) {
-                case 'w':
-                    setDirection('CW');
-                    break;
-                case 's':
-                    setDirection('STOP');
-                    break;
-                case 'x':
-                    setDirection('CCW');
-                    break;
-                case ' ':
-                    e.preventDefault();
-                    emergencyStop();
-                    break;
+            // Only if not typing in input
+            if (e.target.tagName !== 'INPUT') {
+                switch(e.key.toLowerCase()) {
+                    case 'w':
+                        e.preventDefault();
+                        setDirection('CW');
+                        break;
+                    case 's':
+                        e.preventDefault();
+                        setDirection('STOP');
+                        break;
+                    case 'x':
+                        e.preventDefault();
+                        setDirection('CCW');
+                        break;
+                    case ' ':
+                        e.preventDefault();
+                        emergencyStop();
+                        break;
+                }
             }
         });
         
-        // Initialize
-        console.log('Motor Control Panel Ready');
+        // Test Firebase connection on load
+        window.addEventListener('load', function() {
+            console.log('Testing Firebase connection...');
+            
+            // Try to write a test value
+            database.ref('/Motor/WebInterface').set({
+                connected: true,
+                timestamp: Date.now()
+            }).then(() => {
+                console.log('✅ Firebase connection test successful');
+            }).catch((error) => {
+                console.error('❌ Firebase connection test failed:', error);
+                alert('Firebase connection failed. Check console for details.');
+            });
+        });
+        
+        console.log('Motor Control Panel Ready - Connected to Firebase');
     </script>
 </body>
 </html>
