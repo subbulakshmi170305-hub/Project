@@ -1,0 +1,552 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ESP32 Motor Controller</title>
+    
+    <!-- Firebase SDK -->
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-database-compat.js"></script>
+    
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        
+        body {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+        
+        .container {
+            background: white;
+            border-radius: 20px;
+            padding: 30px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            max-width: 500px;
+            width: 100%;
+            animation: slideIn 0.5s ease-out;
+        }
+        
+        @keyframes slideIn {
+            from {
+                transform: translateY(-50px);
+                opacity: 0;
+            }
+            to {
+                transform: translateY(0);
+                opacity: 1;
+            }
+        }
+        
+        h1 {
+            color: #333;
+            text-align: center;
+            margin-bottom: 30px;
+            font-size: 28px;
+            border-bottom: 2px solid #667eea;
+            padding-bottom: 10px;
+        }
+        
+        .status-bar {
+            background: #f5f5f5;
+            border-radius: 10px;
+            padding: 15px;
+            margin-bottom: 30px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .connection-status {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .led {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: #ff4444;
+            transition: background 0.3s;
+        }
+        
+        .led.connected {
+            background: #00C851;
+            box-shadow: 0 0 10px #00C851;
+        }
+        
+        .timestamp {
+            color: #666;
+            font-size: 14px;
+        }
+        
+        .motor-card {
+            background: linear-gradient(145deg, #ffffff, #f5f5f5);
+            border-radius: 15px;
+            padding: 25px;
+            margin-bottom: 25px;
+            box-shadow: inset 0 2px 5px rgba(0,0,0,0.05);
+        }
+        
+        .rpm-display {
+            text-align: center;
+            margin-bottom: 25px;
+        }
+        
+        .rpm-value {
+            font-size: 48px;
+            font-weight: bold;
+            color: #667eea;
+            line-height: 1;
+        }
+        
+        .rpm-label {
+            color: #666;
+            font-size: 16px;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+        }
+        
+        .slider-container {
+            margin-bottom: 30px;
+        }
+        
+        .slider-label {
+            display: flex;
+            justify-content: space-between;
+            color: #555;
+            margin-bottom: 10px;
+            font-weight: 500;
+        }
+        
+        .slider {
+            -webkit-appearance: none;
+            width: 100%;
+            height: 10px;
+            border-radius: 5px;
+            background: linear-gradient(90deg, #667eea, #764ba2);
+            outline: none;
+        }
+        
+        .slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 25px;
+            height: 25px;
+            border-radius: 50%;
+            background: white;
+            border: 2px solid #667eea;
+            cursor: pointer;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+            transition: transform 0.1s;
+        }
+        
+        .slider::-webkit-slider-thumb:hover {
+            transform: scale(1.1);
+        }
+        
+        .direction-buttons {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 15px;
+            margin-top: 20px;
+        }
+        
+        .dir-btn {
+            padding: 15px;
+            border: none;
+            border-radius: 10px;
+            font-size: 18px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s;
+            color: white;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        
+        .dir-btn.cw {
+            background: linear-gradient(145deg, #00C851, #007E33);
+        }
+        
+        .dir-btn.ccw {
+            background: linear-gradient(145deg, #ffbb33, #FF8800);
+        }
+        
+        .dir-btn.stop {
+            background: linear-gradient(145deg, #ff4444, #CC0000);
+        }
+        
+        .dir-btn.active {
+            transform: scale(0.95);
+            box-shadow: 0 0 20px currentColor;
+        }
+        
+        .dir-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 20px rgba(0,0,0,0.2);
+        }
+        
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 15px;
+            margin-top: 25px;
+        }
+        
+        .stat-box {
+            background: #f8f9fa;
+            border-radius: 10px;
+            padding: 15px;
+            text-align: center;
+        }
+        
+        .stat-label {
+            color: #666;
+            font-size: 14px;
+            margin-bottom: 5px;
+        }
+        
+        .stat-value {
+            font-size: 24px;
+            font-weight: bold;
+            color: #333;
+        }
+        
+        .pwm-bar {
+            height: 30px;
+            background: #f0f0f0;
+            border-radius: 15px;
+            overflow: hidden;
+            margin: 10px 0;
+        }
+        
+        .pwm-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #667eea, #764ba2);
+            width: 0%;
+            transition: width 0.3s;
+            border-radius: 15px;
+        }
+        
+        .footer {
+            text-align: center;
+            margin-top: 25px;
+            color: #999;
+            font-size: 12px;
+        }
+        
+        .max-rpm-input {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-top: 15px;
+        }
+        
+        .max-rpm-input input {
+            flex: 1;
+            padding: 10px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 16px;
+        }
+        
+        .max-rpm-input button {
+            padding: 10px 20px;
+            background: #667eea;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: background 0.3s;
+        }
+        
+        .max-rpm-input button:hover {
+            background: #764ba2;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>⚡ Motor Control Panel</h1>
+        
+        <!-- Status Bar -->
+        <div class="status-bar">
+            <div class="connection-status">
+                <div class="led" id="connectionLed"></div>
+                <span id="connectionText">Connecting...</span>
+            </div>
+            <div class="timestamp" id="timestamp">--:--:--</div>
+        </div>
+        
+        <!-- Motor Control Card -->
+        <div class="motor-card">
+            <div class="rpm-display">
+                <div class="rpm-value" id="rpmDisplay">0</div>
+                <div class="rpm-label">RPM</div>
+            </div>
+            
+            <!-- PWM Slider -->
+            <div class="slider-container">
+                <div class="slider-label">
+                    <span>Speed Control</span>
+                    <span id="pwmValue">0</span>
+                </div>
+                <input type="range" min="0" max="225" value="0" class="slider" id="pwmSlider">
+                <div class="pwm-bar">
+                    <div class="pwm-fill" id="pwmBarFill" style="width: 0%"></div>
+                </div>
+            </div>
+            
+            <!-- Direction Buttons -->
+            <div class="direction-buttons">
+                <button class="dir-btn cw" id="cwBtn" onclick="setDirection('CW')">CW</button>
+                <button class="dir-btn stop" id="stopBtn" onclick="setDirection('STOP')">STOP</button>
+                <button class="dir-btn ccw" id="ccwBtn" onclick="setDirection('CCW')">CCW</button>
+            </div>
+        </div>
+        
+        <!-- Statistics Grid -->
+        <div class="stats-grid">
+            <div class="stat-box">
+                <div class="stat-label">PWM Output</div>
+                <div class="stat-value" id="pwmStat">0</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-label">Direction</div>
+                <div class="stat-value" id="dirStat">STOP</div>
+            </div>
+        </div>
+        
+        <!-- MAX RPM Setting -->
+        <div class="max-rpm-input">
+            <input type="number" id="maxRpmInput" placeholder="Max RPM" value="1500">
+            <button onclick="updateMaxRPM()">Set Max RPM</button>
+        </div>
+        
+        <div class="footer">
+            ESP32 Motor Controller • Real-time Updates
+        </div>
+    </div>
+
+    <script>
+        // Firebase Configuration
+        const firebaseConfig = {
+            apiKey: "AIzaSyAKLwh4bktxDl9me9i2Wp9L8gm-SoaZs7s",
+            databaseURL: "https://synchronous-motor-192e9-default-rtdb.asia-southeast1.firebasedatabase.app/",
+            authDomain: "synchronous-motor-192e9.firebaseapp.com",
+            projectId: "synchronous-motor-192e9",
+            storageBucket: "synchronous-motor-192e9.appspot.com",
+            messagingSenderId: "1073191282991",
+            appId: "1:1073191282991:web:db19d76230f4eccb9c0a6c"
+        };
+
+        // Initialize Firebase
+        firebase.initializeApp(firebaseConfig);
+        const database = firebase.database();
+        
+        // DOM Elements
+        const connectionLed = document.getElementById('connectionLed');
+        const connectionText = document.getElementById('connectionText');
+        const timestamp = document.getElementById('timestamp');
+        const rpmDisplay = document.getElementById('rpmDisplay');
+        const pwmSlider = document.getElementById('pwmSlider');
+        const pwmValue = document.getElementById('pwmValue');
+        const pwmStat = document.getElementById('pwmStat');
+        const dirStat = document.getElementById('dirStat');
+        const pwmBarFill = document.getElementById('pwmBarFill');
+        const cwBtn = document.getElementById('cwBtn');
+        const stopBtn = document.getElementById('stopBtn');
+        const ccwBtn = document.getElementById('ccwBtn');
+        const maxRpmInput = document.getElementById('maxRpmInput');
+        
+        // Variables
+        let maxRPM = 1500;
+        let currentDirection = 'STOP';
+        let isUpdating = false;
+        
+        // Check Firebase connection
+        const connectedRef = database.ref('.info/connected');
+        connectedRef.on('value', (snap) => {
+            if (snap.val() === true) {
+                connectionLed.classList.add('connected');
+                connectionText.textContent = 'Connected';
+            } else {
+                connectionLed.classList.remove('connected');
+                connectionText.textContent = 'Disconnected';
+            }
+        });
+        
+        // Listen for PWM changes from ESP32
+        const pwmRef = database.ref('/Motor/PWM');
+        pwmRef.on('value', (snapshot) => {
+            const value = snapshot.val();
+            if (value !== null && !isUpdating) {
+                pwmSlider.value = value;
+                pwmValue.textContent = value;
+                pwmStat.textContent = value;
+                
+                // Calculate RPM based on PWM
+                const rpm = Math.round((value / 225) * maxRPM);
+                rpmDisplay.textContent = rpm;
+                
+                // Update PWM bar
+                const percentage = (value / 225) * 100;
+                pwmBarFill.style.width = percentage + '%';
+            }
+        });
+        
+        // Listen for direction changes from ESP32
+        const dirRef = database.ref('/Motor/Direction_Control');
+        dirRef.on('value', (snapshot) => {
+            const value = snapshot.val();
+            if (value !== null) {
+                currentDirection = value;
+                dirStat.textContent = value;
+                updateActiveButton(value);
+            }
+        });
+        
+        // Listen for RPM changes from ESP32
+        const rpmRef = database.ref('/Motor/RPM');
+        rpmRef.on('value', (snapshot) => {
+            const value = snapshot.val();
+            if (value !== null) {
+                rpmDisplay.textContent = Math.round(value);
+            }
+        });
+        
+        // Slider input event
+        pwmSlider.addEventListener('input', function(e) {
+            const value = parseInt(e.target.value);
+            pwmValue.textContent = value;
+            
+            // Update local display
+            const rpm = Math.round((value / 225) * maxRPM);
+            rpmDisplay.textContent = rpm;
+            
+            // Update PWM bar
+            const percentage = (value / 225) * 100;
+            pwmBarFill.style.width = percentage + '%';
+        });
+        
+        // Slider change event (when user releases slider)
+        pwmSlider.addEventListener('change', function(e) {
+            const value = parseInt(e.target.value);
+            isUpdating = true;
+            
+            // Send to Firebase
+            database.ref('/Motor/PWM_Control').set(value)
+                .then(() => {
+                    pwmStat.textContent = value;
+                    isUpdating = false;
+                })
+                .catch((error) => {
+                    console.error('Error updating PWM:', error);
+                    isUpdating = false;
+                });
+        });
+        
+        // Set direction function
+        function setDirection(dir) {
+            isUpdating = true;
+            
+            database.ref('/Motor/Direction_Control').set(dir)
+                .then(() => {
+                    currentDirection = dir;
+                    dirStat.textContent = dir;
+                    updateActiveButton(dir);
+                    isUpdating = false;
+                })
+                .catch((error) => {
+                    console.error('Error updating direction:', error);
+                    isUpdating = false;
+                });
+        }
+        
+        // Update active button state
+        function updateActiveButton(direction) {
+            cwBtn.classList.remove('active');
+            stopBtn.classList.remove('active');
+            ccwBtn.classList.remove('active');
+            
+            switch(direction) {
+                case 'CW':
+                    cwBtn.classList.add('active');
+                    break;
+                case 'STOP':
+                    stopBtn.classList.add('active');
+                    break;
+                case 'CCW':
+                    ccwBtn.classList.add('active');
+                    break;
+            }
+        }
+        
+        // Update max RPM
+        function updateMaxRPM() {
+            const newMax = parseInt(maxRpmInput.value);
+            if (newMax > 0 && newMax <= 10000) {
+                maxRPM = newMax;
+                
+                // Update RPM display based on current PWM
+                const currentPWM = parseInt(pwmSlider.value);
+                const rpm = Math.round((currentPWM / 225) * maxRPM);
+                rpmDisplay.textContent = rpm;
+            }
+        }
+        
+        // Update timestamp
+        function updateTimestamp() {
+            const now = new Date();
+            const timeString = now.toLocaleTimeString();
+            timestamp.textContent = timeString;
+        }
+        setInterval(updateTimestamp, 1000);
+        
+        // Emergency stop function
+        function emergencyStop() {
+            pwmSlider.value = 0;
+            pwmValue.textContent = '0';
+            pwmStat.textContent = '0';
+            pwmBarFill.style.width = '0%';
+            rpmDisplay.textContent = '0';
+            
+            database.ref('/Motor/PWM_Control').set(0);
+            database.ref('/Motor/Direction_Control').set('STOP');
+        }
+        
+        // Add keyboard shortcuts
+        document.addEventListener('keydown', function(e) {
+            switch(e.key.toLowerCase()) {
+                case 'w':
+                    setDirection('CW');
+                    break;
+                case 's':
+                    setDirection('STOP');
+                    break;
+                case 'x':
+                    setDirection('CCW');
+                    break;
+                case ' ':
+                    e.preventDefault();
+                    emergencyStop();
+                    break;
+            }
+        });
+        
+        // Initialize
+        console.log('Motor Control Panel Ready');
+    </script>
+</body>
+</html>
